@@ -1,0 +1,9 @@
+.env
+node_modules
+dist
+bun.lockb
+bun.lock
+
+# รายงานที่ถูกสร้างขึ้น (ไม่ commit)
+reports/
+*.local.*

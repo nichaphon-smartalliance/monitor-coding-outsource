@@ -1,0 +1,15 @@
+{
+  "name": "outsource-monitor",
+  "version": "0.1.0",
+  "description": "ตรวจสอบโค้ดที่ outsource ส่งมอบรายเดือน: เทียบ 2 git branch, ให้ AI วิเคราะห์การเปลี่ยนแปลงโดยอ่าน base docs + request-change doc แล้วสรุปส่งอีเมลผ่าน Microsoft Graph",
+  "module": "src/index.ts",
+  "type": "module",
+  "scripts": {
+    "analyze": "bun run src/index.ts analyze",
+    "import": "bun run src/index.ts import",
+    "start": "bun run src/index.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}
