@@ -14,14 +14,38 @@ function bool(key: string, fallback = false): boolean {
   return v === "true" || v === "1" || v === "yes";
 }
 
+// "provider" หรือ "provider:model" -> { provider, model }
+export interface ModelSpec {
+  provider?: string;
+  model?: string;
+}
+export function parseSpec(s: string): ModelSpec {
+  const t = s.trim();
+  if (!t) return {};
+  const [p, ...rest] = t.split(":");
+  const model = rest.join(":").trim();
+  return { provider: p.trim() || undefined, model: model || undefined };
+}
+function parseChain(key: string, fallback: string): ModelSpec[] {
+  const raw = str(key) || fallback;
+  return raw.split(",").map((s) => parseSpec(s)).filter((s) => s.provider || s.model);
+}
+
 export const config = {
   ai: {
-    gatewayUrl: str("AI_GATEWAY_URL", "http://localhost:3009").replace(/\/$/, ""),
-    provider: str("AI_PROVIDER") || undefined, // undefined = ใช้ fallback chain
+    gatewayUrl: str("AI_GATEWAY_URL", "https://ai.develyst.online").replace(/\/$/, ""),
+    provider: str("AI_PROVIDER") || undefined, // undefined = ใช้ fallback chain ของ gateway
     model: str("AI_MODEL") || undefined,
     maxTokens: num("AI_MAX_TOKENS", 4096),
     temperature: num("AI_TEMPERATURE", 0.2),
     timeout: num("AI_TIMEOUT", 120000),
+    // ===== pipeline หลายสเตจ =====
+    // Stage 1: เข้าใจ docs (model เล็ก)
+    contextModel: parseSpec(str("AI_CONTEXT_MODEL", "deepseek:deepseek-chat")),
+    // Stage 2: วิเคราะห์โค้ดรายไฟล์ แบบ refine chain (ส่งต่อให้กันตรวจทาน)
+    analyzeChain: parseChain("AI_ANALYZE_CHAIN", "deepseek:deepseek-chat,xai:grok-3,openai:gpt-4o-mini"),
+    // Stage 3: เขียนอีเมล/สรุปภาพรวม (model ใหญ่)
+    writerModel: parseSpec(str("AI_WRITER_MODEL", "openai:gpt-4o")),
   },
   repo: str("TARGET_REPO") || process.cwd(),
   language: (str("REPORT_LANGUAGE", "th").toLowerCase() === "en" ? "en" : "th") as "th" | "en",

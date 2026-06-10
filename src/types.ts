@@ -45,6 +45,7 @@ export interface FileAnalysis {
   risk: "low" | "medium" | "high"; // ความเสี่ยง/ควรรีวิวเป็นพิเศษ
   notes?: string;                  // ข้อสังเกตเพิ่ม เช่น breaking change, security
   raw?: string;                    // เผื่อ parse JSON ไม่ได้ เก็บข้อความดิบไว้
+  modelsUsed?: string[];           // โมเดลที่ร่วมคิดไฟล์นี้ (refine chain)
 }
 
 export type ChangeClass =
@@ -78,6 +79,11 @@ export interface AnalysisReport {
   changeRequestPath?: string;
   files: FileAnalysis[];
   executiveSummary: string; // สรุปผู้บริหาร (ภาษาคน)
+  pipeline: {               // โมเดลที่ใช้ในแต่ละสเตจ (เพื่อความโปร่งใส)
+    contextModel: string;
+    analyzeChain: string[];
+    writerModel: string;
+  };
   stats: {
     totalFiles: number;
     requested: number;

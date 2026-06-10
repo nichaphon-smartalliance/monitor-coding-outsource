@@ -12,27 +12,36 @@
         ▼
   git diff รายไฟล์
         │
-        ├─ อ่าน base docs (README/docs) → ให้ AI เข้าใจว่าโปรเจกต์ทำอะไร + ศัพท์เฉพาะ
+        ├─ [Stage 1] อ่าน base docs → model เล็กสรุปว่าโปรเจกต์ทำอะไร + ศัพท์เฉพาะ
         ├─ อ่าน request-change doc ของรอบนั้น (.md/.txt/.pdf)
         ▼
-  AI วิเคราะห์ทีละไฟล์ → จัดกลุ่ม (ตามที่ขอ / งานหลัก / นอกเหนือ / refactor / config)
+  [Stage 2] วิเคราะห์ทีละไฟล์ แบบ refine chain หลายโมเดล
+            deepseek (draft) → xai (ตรวจทาน) → openai-mini (สรุป)
+            จัดกลุ่ม: ตามที่ขอ / งานหลัก / นอกเหนือ / refactor / config
         │
         ▼
-  รายงาน .md + สรุปภาพรวม → (เลือก) ส่งอีเมลผ่าน Microsoft Graph
+  [Stage 3] openai gpt-4o (ตัวใหญ่) เรียบเรียงสรุป/อีเมล
+        ▼
+  รายงาน .md → (เลือก) ส่งอีเมลผ่าน Microsoft Graph
 ```
 
-AI เรียกผ่าน **develyst-ai gateway** (ต้องรันก่อน) ที่ `localhost:3009`
+AI เรียกผ่าน **develyst-ai gateway** — ค่าเริ่มต้นชี้ไป server `https://ai.develyst.online`
+(จะใช้ local `http://localhost:3009` ก็ได้ ตั้งใน `.env`)
 อีเมลส่งผ่าน **Microsoft Graph** (client-credentials)
+
+### Pipeline หลายสเตจ (ปรับได้ใน `.env`)
+ใช้ model เล็กราคาถูกคิดวิเคราะห์ซ้ำหลายรอบ/หลายตัว แล้วให้ model ใหญ่เขียนข้อความตอนท้าย:
+- `AI_CONTEXT_MODEL` — Stage 1 เข้าใจ docs
+- `AI_ANALYZE_CHAIN` — Stage 2 chain ของโมเดล (คั่นด้วย comma) ตัวแรก draft ตัวถัด ๆ ตรวจทาน/แก้
+- `AI_WRITER_MODEL` — Stage 3 เรียบเรียงสรุป
+รูปแบบค่า: `provider` หรือ `provider:model` เช่น `openai:gpt-4o`
 
 ## เตรียมก่อนใช้
 
 1. ติดตั้ง dependency: `bun install`
 2. คัดลอก `.env.example` เป็น `.env` แล้วเติมค่า (AI gateway URL, Microsoft Graph credentials, ผู้รับอีเมล)
-3. รัน develyst-ai gateway ไว้ก่อน:
-   ```
-   cd C:\Users\Admin\develyst\develyst-ai
-   bun run dev
-   ```
+3. AI gateway: ค่าเริ่มต้นใช้ server `https://ai.develyst.online` (ไม่ต้องรันเอง)
+   ถ้าอยากรัน local: `cd C:\Users\Admin\develyst\develyst-ai && bun run dev` แล้วตั้ง `AI_GATEWAY_URL=http://localhost:3009`
 
 ## การใช้งานรายเดือน
 

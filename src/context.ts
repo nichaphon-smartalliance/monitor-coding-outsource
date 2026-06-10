@@ -75,7 +75,7 @@ export async function buildProjectContext(repo: string, ref: string): Promise<Pr
         { role: "system", content: system },
         { role: "user", content: user },
       ],
-      { maxTokens: 2048 },
+      { maxTokens: 2048, spec: config.ai.contextModel },
     );
     const { extractJSON } = await import("./ai.ts");
     const parsed = extractJSON<{ overview: string; glossary: string }>(raw);

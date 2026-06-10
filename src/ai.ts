@@ -1,7 +1,18 @@
 // client เรียก develyst-ai gateway
 
 import { config } from "./config.ts";
+import type { ModelSpec } from "./config.ts";
 import type { AIResponse, ChatMessage } from "./types.ts";
+
+export interface ChatOpts {
+  maxTokens?: number;
+  spec?: ModelSpec; // ระบุ provider/model เจาะจงต่อการเรียก (สเตจ pipeline)
+}
+
+export function specLabel(spec?: ModelSpec): string {
+  if (!spec || (!spec.provider && !spec.model)) return "fallback";
+  return spec.model ? `${spec.provider ?? "?"}:${spec.model}` : (spec.provider ?? "fallback");
+}
 
 // เช็คว่า gateway ออนไลน์ไหม (GET /)
 export async function checkGateway(): Promise<{ ok: boolean; detail: string }> {
@@ -19,16 +30,18 @@ export async function checkGateway(): Promise<{ ok: boolean; detail: string }> {
 }
 
 // เรียก AI 1 ครั้ง (มี retry เล็กน้อยกัน network สะดุด)
-export async function chat(messages: ChatMessage[], opts?: { maxTokens?: number }): Promise<string> {
+export async function chat(messages: ChatMessage[], opts?: ChatOpts): Promise<string> {
   const body: Record<string, unknown> = {
     messages,
     temperature: config.ai.temperature,
     max_tokens: opts?.maxTokens ?? config.ai.maxTokens,
     timeout: config.ai.timeout,
   };
-  // ถ้าระบุ provider/model เจาะจง ค่อยใส่ ไม่งั้นปล่อยให้ gateway fallback
-  if (config.ai.provider) body.provider = config.ai.provider;
-  if (config.ai.model) body.model = config.ai.model;
+  // ลำดับความสำคัญ: spec ต่อการเรียก > ค่า global ใน .env > ปล่อย gateway fallback
+  const provider = opts?.spec?.provider ?? config.ai.provider;
+  const model = opts?.spec?.model ?? config.ai.model;
+  if (provider) body.provider = provider;
+  if (model) body.model = model;
 
   let lastErr: Error = new Error("AI call failed");
   for (let attempt = 1; attempt <= 2; attempt++) {
@@ -54,7 +67,7 @@ export async function chat(messages: ChatMessage[], opts?: { maxTokens?: number 
 }
 
 // ขอให้ AI ตอบเป็น JSON แล้ว parse ให้ (ทนต่อ code fence / ข้อความเกิน)
-export async function chatJSON<T>(messages: ChatMessage[], opts?: { maxTokens?: number }): Promise<{ data: T | null; raw: string }> {
+export async function chatJSON<T>(messages: ChatMessage[], opts?: ChatOpts): Promise<{ data: T | null; raw: string }> {
   const raw = await chat(messages, opts);
   const parsed = extractJSON<T>(raw);
   return { data: parsed, raw };

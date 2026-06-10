@@ -1,7 +1,7 @@
 // orchestrator: รวมบริบทโปรเจกต์ + request-change + diff แล้วให้ AI วิเคราะห์ทีละไฟล์
 // จากนั้นสรุปภาพรวม (executive summary)
 
-import { chatJSON, chat } from "./ai.ts";
+import { chatJSON, chat, specLabel } from "./ai.ts";
 import { config } from "./config.ts";
 import { buildProjectContext } from "./context.ts";
 import { diffFiles, commitLog } from "./git.ts";
@@ -10,6 +10,7 @@ import type {
   ChangeClass,
   ChangedFile,
   ChangeRequestDoc,
+  ChatMessage,
   FileAnalysis,
   ProjectContext,
 } from "./types.ts";
@@ -75,6 +76,33 @@ ${f.patch || "(ไม่มี patch)"}
 \`\`\``;
 }
 
+// prompt สำหรับรอบ "ตรวจทาน/แก้" ของโมเดลถัดไปใน chain
+function refineSystemPrompt(ctx: ProjectContext, cr?: ChangeRequestDoc): string {
+  return fileSystemPrompt(ctx, cr) + `
+
+# โหมดตรวจทาน
+ด้านล่างมีผลวิเคราะห์ของโมเดลก่อนหน้า (draft) ให้คุณตรวจทานเทียบกับ diff จริงและ request-change:
+- ถ้าถูกต้องแล้ว คงไว้/ปรับให้คมขึ้น
+- ถ้าจัดประเภทผิด, ประเมินความเสี่ยงพลาด, จับคู่ CR ผิด หรืออธิบายไม่ตรงโค้ด ให้แก้
+- ระวัง false negative ด้านความปลอดภัย (เช่น ส่งข้อมูลออกนอกระบบ, hardcoded secret, เปลี่ยนสิทธิ์)
+ตอบกลับเป็น JSON รูปแบบเดิมเท่านั้น (ฉบับที่แก้แล้ว)`;
+}
+
+function mapResult(f: ChangedFile, data: AIFileResult, modelsUsed: string[], raw?: string): FileAnalysis {
+  return {
+    path: f.path,
+    status: f.status,
+    summary: data.summary ?? "",
+    classification: normalizeClass(data.classification),
+    matchedRequest: data.matchedRequest?.trim() || undefined,
+    confidence: normalizeLevel(data.confidence, ["high", "medium", "low"], "low") as any,
+    risk: normalizeLevel(data.risk, ["low", "medium", "high"], "low") as any,
+    notes: data.notes?.trim() || undefined,
+    modelsUsed,
+    raw,
+  };
+}
+
 async function analyzeFile(f: ChangedFile, ctx: ProjectContext, cr?: ChangeRequestDoc): Promise<FileAnalysis> {
   if (f.binary) {
     return {
@@ -87,47 +115,50 @@ async function analyzeFile(f: ChangedFile, ctx: ProjectContext, cr?: ChangeReque
     };
   }
 
-  try {
-    const { data, raw } = await chatJSON<AIFileResult>(
-      [
-        { role: "system", content: fileSystemPrompt(ctx, cr) },
-        { role: "user", content: fileUserPrompt(f) },
-      ],
-      { maxTokens: 1200 },
-    );
+  const chain = config.ai.analyzeChain.length ? config.ai.analyzeChain : [{}];
+  let current: AIFileResult | null = null;
+  let lastRaw = "";
+  const modelsUsed: string[] = [];
 
-    if (!data) {
-      return {
-        path: f.path,
-        status: f.status,
-        summary: raw.slice(0, 400) || "วิเคราะห์ไม่สำเร็จ",
-        classification: "unknown",
-        confidence: "low",
-        risk: "low",
-        raw,
-      };
+  for (let i = 0; i < chain.length; i++) {
+    const spec = chain[i];
+    const isDraft = i === 0;
+    const messages: ChatMessage[] = isDraft
+      ? [
+          { role: "system" as const, content: fileSystemPrompt(ctx, cr) },
+          { role: "user" as const, content: fileUserPrompt(f) },
+        ]
+      : [
+          { role: "system" as const, content: refineSystemPrompt(ctx, cr) },
+          { role: "user" as const, content:
+            fileUserPrompt(f) +
+            `\n\n# ผลวิเคราะห์ของโมเดลก่อนหน้า (ตรวจทาน):\n${JSON.stringify(current, null, 2)}` },
+        ];
+
+    try {
+      const { data, raw } = await chatJSON<AIFileResult>(messages, { maxTokens: 1200, spec });
+      lastRaw = raw;
+      modelsUsed.push(specLabel(spec));
+      if (data) current = data; // ถ้ารอบนี้ parse ไม่ได้ คงผลก่อนหน้าไว้
+    } catch {
+      // โมเดลตัวนี้ล่ม → ข้ามไปใช้ผลที่มี/รอบถัดไป
+      modelsUsed.push(specLabel(spec) + "(ล้มเหลว)");
     }
+  }
 
+  if (!current) {
     return {
       path: f.path,
       status: f.status,
-      summary: data.summary ?? "",
-      classification: normalizeClass(data.classification),
-      matchedRequest: data.matchedRequest?.trim() || undefined,
-      confidence: normalizeLevel(data.confidence, ["high", "medium", "low"], "low") as any,
-      risk: normalizeLevel(data.risk, ["low", "medium", "high"], "low") as any,
-      notes: data.notes?.trim() || undefined,
-    };
-  } catch (err: any) {
-    return {
-      path: f.path,
-      status: f.status,
-      summary: `วิเคราะห์ไม่สำเร็จ: ${err?.message ?? err}`,
+      summary: lastRaw.slice(0, 400) || "วิเคราะห์ไม่สำเร็จ",
       classification: "unknown",
       confidence: "low",
       risk: "low",
+      modelsUsed,
+      raw: lastRaw,
     };
   }
+  return mapResult(f, current, modelsUsed);
 }
 
 function normalizeClass(c: string | undefined): ChangeClass {
@@ -174,7 +205,8 @@ export async function runAnalysis(opts: AnalyzeOptions): Promise<AnalysisReport>
   const files = diffFiles(repo, baseRef, headRef);
   log(`   พบ ${files.length} ไฟล์ที่เปลี่ยน`);
 
-  log("🤖 วิเคราะห์การเปลี่ยนแปลงทีละไฟล์...");
+  const chainLabels = (config.ai.analyzeChain.length ? config.ai.analyzeChain : [{}]).map(specLabel);
+  log(`🤖 วิเคราะห์การเปลี่ยนแปลงทีละไฟล์ (refine chain: ${chainLabels.join(" → ")})...`);
   let done = 0;
   const analyses = await mapLimit(files, CONCURRENCY, async (f) => {
     const r = await analyzeFile(f, projectContext, changeRequest);
@@ -191,7 +223,7 @@ export async function runAnalysis(opts: AnalyzeOptions): Promise<AnalysisReport>
     highRisk: analyses.filter((a) => a.risk === "high").length,
   };
 
-  log("📝 สรุปภาพรวม (executive summary)...");
+  log(`📝 สรุปภาพรวม + เรียบเรียงอีเมล (writer: ${specLabel(config.ai.writerModel)})...`);
   const executiveSummary = await buildExecutiveSummary(analyses, projectContext, changeRequest, { baseRef, headRef });
 
   return {
@@ -203,6 +235,11 @@ export async function runAnalysis(opts: AnalyzeOptions): Promise<AnalysisReport>
     changeRequestPath: changeRequest?.path,
     files: analyses,
     executiveSummary,
+    pipeline: {
+      contextModel: specLabel(config.ai.contextModel),
+      analyzeChain: chainLabels,
+      writerModel: specLabel(config.ai.writerModel),
+    },
     stats,
   };
 }
@@ -243,7 +280,7 @@ ${cr ? `request-change รอบนี้:\n${cr.text.slice(0, 4000)}` : "รอ
         { role: "system", content: system },
         { role: "user", content: "ผลวิเคราะห์รายไฟล์ (JSON):\n" + JSON.stringify(compact, null, 2) },
       ],
-      { maxTokens: 2048 },
+      { maxTokens: 2048, spec: config.ai.writerModel },
     );
   } catch (err: any) {
     return `(สร้างสรุปภาพรวมไม่สำเร็จ: ${err?.message ?? err})`;

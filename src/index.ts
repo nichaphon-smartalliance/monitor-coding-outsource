@@ -87,7 +87,8 @@ async function cmdAnalyze(flags: Record<string, string | boolean>) {
   if (!gw.ok) {
     fail(
       `เชื่อมต่อ AI gateway ไม่ได้ที่ ${config.ai.gatewayUrl} (${gw.detail})\n` +
-      `→ เปิด develyst-ai ก่อน: cd C:\\Users\\Admin\\develyst\\develyst-ai && bun run dev`,
+      `→ ถ้าใช้ server: เช็คเน็ต/URL ใน .env (ค่าปัจจุบัน ${config.ai.gatewayUrl})\n` +
+      `→ ถ้าใช้ local: เปิด develyst-ai ก่อน (cd C:\\Users\\Admin\\develyst\\develyst-ai && bun run dev) แล้วตั้ง AI_GATEWAY_URL=http://localhost:3009`,
     );
   }
   console.log(`✓ AI gateway: ${gw.detail} (${config.ai.gatewayUrl})`);

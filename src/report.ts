@@ -66,6 +66,9 @@ export function reportToMarkdown(r: AnalysisReport): string {
 
   lines.push("");
   lines.push(`---`);
+  lines.push(`**Pipeline:** อ่าน docs ด้วย \`${r.pipeline.contextModel}\` · ` +
+    `วิเคราะห์โค้ด (refine chain) \`${r.pipeline.analyzeChain.join(" → ")}\` · ` +
+    `เรียบเรียงสรุปด้วย \`${r.pipeline.writerModel}\``);
   lines.push(`_สร้างโดย outsource-monitor — วิเคราะห์ด้วย AI ผ่าน develyst-ai gateway_`);
   return lines.join("\n");
 }
@@ -127,7 +130,12 @@ export function reportToHtml(r: AnalysisReport): string {
     ${rows}
   </table>
 
-  <p style="color:#9ca3af;font-size:12px;margin-top:16px">สร้างโดย outsource-monitor — วิเคราะห์ด้วย AI ผ่าน develyst-ai gateway</p>
+  <p style="color:#9ca3af;font-size:12px;margin-top:16px">
+    Pipeline: อ่าน docs ด้วย <code>${esc(r.pipeline.contextModel)}</code> ·
+    วิเคราะห์โค้ด (refine chain) <code>${esc(r.pipeline.analyzeChain.join(" → "))}</code> ·
+    เรียบเรียงด้วย <code>${esc(r.pipeline.writerModel)}</code><br/>
+    สร้างโดย outsource-monitor — วิเคราะห์ด้วย AI ผ่าน develyst-ai gateway
+  </p>
 </div>`;
 }
 
