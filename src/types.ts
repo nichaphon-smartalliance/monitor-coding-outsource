@@ -63,10 +63,23 @@ export interface ProjectContext {
   sourceDocs: string[]; // รายชื่อไฟล์ docs ที่อ่าน
 }
 
-// รายการ request-change ของเดือนนั้น
-export interface ChangeRequestDoc {
+// เอกสารทั่วไปที่โหลดเป็น text (requirement / change-request)
+export interface LoadedDoc {
   path: string;
   text: string;       // เนื้อหาดิบ (md/txt/pdf->text)
+}
+// ใช้ชื่อเดิมต่อได้ (alias)
+export type ChangeRequestDoc = LoadedDoc;
+
+// ทะเบียนโปรเจกต์ 1 ตัว (ไฟล์ projects/<id>.json)
+export interface ProjectConfig {
+  id: string;                 // มาจากชื่อไฟล์ เช่น shopx
+  name: string;               // ชื่อแสดงผล
+  repo: string;               // path repo ที่เก็บโค้ดส่งมอบ (relative ต่อ tool root หรือ absolute)
+  requirementDoc?: string;    // สเปกตั้งต้นของโปรเจกต์
+  changeRequests?: string;    // backlog ของ request-change (ไม่ผูกเดือน)
+  baseBranch?: string;        // branch ตั้งต้น (ถ้าไม่ระบุ --base)
+  emailTo?: string[];         // ผู้รับเมลเฉพาะโปรเจกต์นี้ (override .env)
 }
 
 // รายงานรวมทั้งหมด
@@ -75,7 +88,9 @@ export interface AnalysisReport {
   baseRef: string;
   headRef: string;
   generatedAt: string;
+  projectName?: string;
   projectContext: ProjectContext;
+  requirementPath?: string;
   changeRequestPath?: string;
   files: FileAnalysis[];
   executiveSummary: string; // สรุปผู้บริหาร (ภาษาคน)

@@ -12,6 +12,7 @@ import type {
   ChangeRequestDoc,
   ChatMessage,
   FileAnalysis,
+  LoadedDoc,
   ProjectContext,
 } from "./types.ts";
 
@@ -29,8 +30,8 @@ interface AIFileResult {
 function fileSystemPrompt(ctx: ProjectContext, cr?: ChangeRequestDoc): string {
   const lang = config.language === "th" ? "ตอบเป็นภาษาไทย" : "Answer in English";
   const crBlock = cr
-    ? `\n\n# request-change ที่ลูกค้าขอไว้สำหรับรอบนี้ (ใช้จับคู่ว่าการเปลี่ยนแปลงตรงกับที่ขอไหม):\n${cr.text.slice(0, 8000)}`
-    : "\n\n# หมายเหตุ: รอบนี้ไม่มีเอกสาร request-change แนบมา";
+    ? `\n\n# Backlog ของ request-change ที่เคยขอไว้ (สะสม ไม่ผูกเดือน — รอบนี้อาจทำ CR เก่าที่ขอไว้นานแล้วก็ได้):\n${cr.text.slice(0, 8000)}`
+    : "\n\n# หมายเหตุ: ไม่มีเอกสาร request-change";
 
   return `คุณเป็น senior code reviewer กำลังตรวจโค้ดที่ vendor (outsource) ส่งมอบรายเดือน
 ${lang} และใช้คำศัพท์ให้ตรงกับโดเมนของโปรเจกต์
@@ -45,8 +46,8 @@ ${crBlock}
 # งานของคุณ
 ดู diff ของไฟล์ 1 ไฟล์ แล้ววิเคราะห์ว่ามีการเปลี่ยนอะไร อธิบายให้คนที่ไม่ได้อ่านโค้ดเข้าใจได้
 จัดกลุ่มการเปลี่ยนแปลง:
-- "requested-change" = ตรงกับ request-change ที่ลูกค้าขอ (ระบุข้อที่ตรงใน matchedRequest)
-- "main-requirement" = งานหลักตาม requirement ของโปรเจกต์ (ไม่ได้อยู่ใน request-change รอบนี้แต่สมเหตุสมผล)
+- "requested-change" = ตรงกับ request-change ใน backlog (ระบุข้อที่ตรงใน matchedRequest) ไม่ว่าจะขอไว้นานแค่ไหน
+- "main-requirement" = งานหลักตาม project requirement ตั้งต้น (ไม่ได้อยู่ใน CR backlog แต่สอดคล้องสเปก)
 - "refactor" = ปรับโครงสร้าง/จัดระเบียบ ไม่เปลี่ยนพฤติกรรม
 - "config-or-build" = config, dependency, build script
 - "unexpected" = เปลี่ยนนอกเหนือสิ่งที่ขอและดูไม่เกี่ยว ควรตรวจสอบ
@@ -190,16 +191,18 @@ export interface AnalyzeOptions {
   repo: string;
   baseRef: string;
   headRef: string;
-  changeRequest?: ChangeRequestDoc;
+  projectName?: string;
+  requirement?: LoadedDoc;      // สเปกตั้งต้นของโปรเจกต์
+  changeRequest?: ChangeRequestDoc; // backlog ของ CR
   onProgress?: (msg: string) => void;
 }
 
 export async function runAnalysis(opts: AnalyzeOptions): Promise<AnalysisReport> {
-  const { repo, baseRef, headRef, changeRequest, onProgress } = opts;
+  const { repo, baseRef, headRef, projectName, requirement, changeRequest, onProgress } = opts;
   const log = onProgress ?? (() => {});
 
-  log("📖 อ่าน base docs และสรุปบริบทโปรเจกต์...");
-  const projectContext = await buildProjectContext(repo, headRef);
+  log("📖 อ่าน requirement + base docs และสรุปบริบทโปรเจกต์...");
+  const projectContext = await buildProjectContext(repo, headRef, requirement);
 
   log("🔍 ดึง diff ระหว่าง branch...");
   const files = diffFiles(repo, baseRef, headRef);
@@ -231,7 +234,9 @@ export async function runAnalysis(opts: AnalyzeOptions): Promise<AnalysisReport>
     baseRef,
     headRef,
     generatedAt: new Date().toISOString(),
+    projectName,
     projectContext,
+    requirementPath: requirement?.path,
     changeRequestPath: changeRequest?.path,
     files: analyses,
     executiveSummary,

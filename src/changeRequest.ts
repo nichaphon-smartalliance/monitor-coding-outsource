@@ -4,25 +4,25 @@
 import { readFileSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { extname } from "node:path";
-import type { ChangeRequestDoc } from "./types.ts";
+import type { LoadedDoc } from "./types.ts";
 
-export function loadChangeRequest(path: string): ChangeRequestDoc {
+// โหลดเอกสารใด ๆ (requirement / change-request) เป็น text — รองรับ md/txt/pdf
+export function loadDoc(path: string, label = "เอกสาร"): LoadedDoc {
   if (!existsSync(path)) {
-    throw new Error(`ไม่พบไฟล์ request-change doc: ${path}`);
+    throw new Error(`ไม่พบไฟล์ ${label}: ${path}`);
   }
   const ext = extname(path).toLowerCase();
 
-  if (ext === ".md" || ext === ".txt" || ext === ".markdown") {
-    return { path, text: readFileSync(path, "utf8") };
-  }
-
   if (ext === ".pdf") {
-    const text = pdfToText(path);
-    return { path, text };
+    return { path, text: pdfToText(path) };
   }
-
-  // ไม่รู้จักนามสกุล ลองอ่านเป็น text
+  // md/txt/markdown หรือไม่รู้จักนามสกุล → อ่านเป็น text
   return { path, text: readFileSync(path, "utf8") };
+}
+
+// alias เดิม
+export function loadChangeRequest(path: string): LoadedDoc {
+  return loadDoc(path, "request-change doc");
 }
 
 function pdfToText(path: string): string {

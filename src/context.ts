@@ -4,7 +4,7 @@
 import { listFilesAtRef, readFileAtRef } from "./git.ts";
 import { chat } from "./ai.ts";
 import { config } from "./config.ts";
-import type { ProjectContext } from "./types.ts";
+import type { LoadedDoc, ProjectContext } from "./types.ts";
 
 const MAX_DOC_CHARS = 60000; // รวมทุก docs ไม่เกินเท่านี้ (กัน token บาน)
 const PER_DOC_CHARS = 12000;
@@ -38,8 +38,16 @@ export function collectDocs(repo: string, ref: string): { path: string; text: st
   return docs;
 }
 
-export async function buildProjectContext(repo: string, ref: string): Promise<ProjectContext> {
-  const docs = collectDocs(repo, ref);
+export async function buildProjectContext(
+  repo: string,
+  ref: string,
+  requirement?: LoadedDoc,
+): Promise<ProjectContext> {
+  const repoDocs = collectDocs(repo, ref);
+  // requirement doc (สเปกตั้งต้น) สำคัญสุด → วางไว้หน้าสุดให้ AI อ่านก่อน
+  const docs = requirement && requirement.text.trim()
+    ? [{ path: `[PROJECT REQUIREMENT] ${requirement.path}`, text: requirement.text.slice(0, 30000) }, ...repoDocs]
+    : repoDocs;
 
   if (docs.length === 0) {
     return {

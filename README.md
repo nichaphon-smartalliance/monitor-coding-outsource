@@ -1,8 +1,12 @@
 # outsource-monitor
 
-เครื่องมือช่วยตรวจโค้ดที่ vendor (outsource) ส่งมอบ **รายเดือน** — เทียบโค้ดเดือนนี้กับเดือนก่อน
+เครื่องมือช่วยตรวจโค้ดที่ vendor (outsource) ส่งมอบเป็นรอบ ๆ — เทียบโค้ดรอบนี้กับรอบก่อน
 ให้ **AI วิเคราะห์** ว่ามีอะไรเปลี่ยน อันไหนตรงกับ request-change ที่เราขอไป อันไหนเป็นงานหลัก/นอกเหนือ
-แล้วสรุปเป็นรายงานส่ง **อีเมล** ให้อัตโนมัติ
+แล้วสรุปเป็นรายงานส่ง **อีเมล** ให้อัตโนมัติ — **รองรับหลายโปรเจกต์** (ตั้งค่าโปรเจกต์ละ 1 ไฟล์)
+
+แต่ละโปรเจกต์มี 2 เอกสารอ้างอิง:
+- **Project Requirement** — สเปกตั้งต้น (ช่วยให้ AI เข้าใจว่าระบบควรทำอะไร)
+- **Request-Change Backlog** — รายการที่ขอแก้ แบบสะสม **ไม่ผูกกับเดือน** (CR ที่ขอนานแล้วเพิ่งทำเสร็จได้)
 
 ## มันทำอะไร
 
@@ -43,44 +47,59 @@ AI เรียกผ่าน **develyst-ai gateway** — ค่าเริ่
 3. AI gateway: ค่าเริ่มต้นใช้ server `https://ai.develyst.online` (ไม่ต้องรันเอง)
    ถ้าอยากรัน local: `cd C:\Users\Admin\develyst\develyst-ai && bun run dev` แล้วตั้ง `AI_GATEWAY_URL=http://localhost:3009`
 
-## การใช้งานรายเดือน
+## ตั้งค่าโปรเจกต์ (ทำครั้งเดียวต่อโปรเจกต์)
+
+สร้างไฟล์ `projects/<id>.json` (ดูตัวอย่าง `projects/example.json`):
+```json
+{
+  "name": "ShopX Backend",
+  "repo": "../shopx-delivery",
+  "requirementDoc": "docs/shopx/requirement.md",
+  "changeRequests": "docs/shopx/change-requests.md",
+  "emailTo": ["md@smartalliance.co.th"]
+}
+```
+- `repo` = git repo ที่เก็บโค้ดส่งมอบ (แต่ละรอบ = 1 branch) — path relative อิงจาก root ของเครื่องมือ หรือใส่ absolute
+- `requirementDoc` / `changeRequests` = path ไปเอกสาร 2 ไฟล์ (.md/.txt/.pdf)
+
+ดูโปรเจกต์ทั้งหมด: `bun run src/index.ts projects`
+
+## การใช้งานแต่ละรอบส่งมอบ
 
 ### 1) (ทางเลือก) เอาโค้ดที่ vendor ส่งมาขึ้น branch ใหม่
 ```
-bun run src/index.ts import --repo ../vendor-repo --from "C:\delivery\2026-06" --branch 2026-06 --yes
+bun run src/index.ts import --project shopx --from "C:\delivery\rd4" --branch delivery-4 --yes
 ```
 ไม่ใส่ `--yes` = dry-run (แสดงว่าจะทำอะไร ยังไม่เขียนจริง)
 
 ### 2) วิเคราะห์ + ส่งรายงาน
 ```
-bun run src/index.ts analyze \
-  --repo ../vendor-repo \
-  --base 2026-05 \
-  --head 2026-06 \
-  --cr docs/change-requests/2026-06.md \
-  --send-email
+bun run src/index.ts analyze --project shopx --base delivery-3 --head delivery-4 --send-email
 ```
 
 - รายงาน `.md` จะถูกเก็บใน `reports/`
 - `--send-email` จะเคารพ `EMAIL_SEND_ENABLED` ใน `.env`
   (`false` = โหมดทดสอบ สร้างรายงานแต่ไม่ส่งจริง — ปลอดภัยสำหรับลองครั้งแรก)
+- ไม่อยากใช้ `--project` ก็ระบุเองได้: `--repo <path> --requirement <doc> --cr <doc>`
 
-## request-change doc
+## เอกสาร 2 ไฟล์ต่อโปรเจกต์
 
-แต่ละเดือนสร้างไฟล์ เช่น `docs/change-requests/2026-06.md` ระบุสิ่งที่ขอให้ vendor แก้
-(ดูตัวอย่างที่ `docs/change-requests/2026-06.example.md`)
-รองรับ `.md` / `.txt` และ `.pdf` (ต้องมี `pdftotext`/poppler ในเครื่อง)
+- **requirement** — สเปกตั้งต้น แทบไม่เปลี่ยน (ตัวอย่าง `docs/example/requirement.md`)
+- **change-requests** — backlog ที่ขอแก้ สะสมไม่ผูกเดือน ใส่สถานะกำกับได้ (ตัวอย่าง `docs/example/change-requests.md`)
+
+รองรับ `.md` / `.txt` และ `.pdf` (PDF ต้องมี `pdftotext`/poppler ในเครื่อง)
 
 ## โครงสร้างโค้ด
 
 | ไฟล์ | หน้าที่ |
 |---|---|
-| `src/index.ts` | CLI (`analyze`, `import`) |
+| `src/index.ts` | CLI (`analyze`, `import`, `projects`) |
 | `src/config.ts` | โหลดค่าจาก `.env` |
+| `src/projects.ts` | ทะเบียนโปรเจกต์ (อ่าน `projects/<id>.json`) |
 | `src/ai.ts` | เรียก develyst-ai gateway + parse JSON |
 | `src/git.ts` | diff 2 ref, อ่านไฟล์ที่ ref |
-| `src/context.ts` | รวบรวม base docs → ให้ AI สรุปบริบทโปรเจกต์ |
-| `src/changeRequest.ts` | โหลด request-change doc (md/txt/pdf) |
+| `src/context.ts` | รวม requirement + base docs → ให้ AI สรุปบริบท |
+| `src/changeRequest.ts` | โหลดเอกสาร requirement/CR (md/txt/pdf) |
 | `src/analyze.ts` | orchestrator: วิเคราะห์รายไฟล์ + สรุปภาพรวม |
 | `src/report.ts` | สร้างรายงาน markdown + HTML |
 | `src/email.ts` | ส่งอีเมลผ่าน Microsoft Graph |

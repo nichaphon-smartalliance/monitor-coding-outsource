@@ -19,12 +19,13 @@ const RISK_LABEL: Record<string, string> = {
 
 export function reportToMarkdown(r: AnalysisReport): string {
   const lines: string[] = [];
-  lines.push(`# รายงานตรวจโค้ด outsource`);
+  lines.push(`# รายงานตรวจโค้ด outsource${r.projectName ? ` — ${r.projectName}` : ""}`);
   lines.push("");
   lines.push(`- **Repo:** ${r.repo}`);
   lines.push(`- **เทียบ:** \`${r.baseRef}\` → \`${r.headRef}\``);
   lines.push(`- **สร้างเมื่อ:** ${r.generatedAt}`);
-  if (r.changeRequestPath) lines.push(`- **request-change doc:** ${r.changeRequestPath}`);
+  if (r.requirementPath) lines.push(`- **project requirement:** ${r.requirementPath}`);
+  if (r.changeRequestPath) lines.push(`- **request-change backlog:** ${r.changeRequestPath}`);
   if (r.projectContext.sourceDocs.length) {
     lines.push(`- **base docs ที่อ่าน:** ${r.projectContext.sourceDocs.join(", ")}`);
   }
@@ -92,7 +93,7 @@ export function reportToHtml(r: AnalysisReport): string {
     .join("\n");
 
   return `<div style="font-family:Segoe UI,Arial,sans-serif;color:#1f2937;max-width:900px">
-  <h2 style="margin-bottom:4px">รายงานตรวจโค้ด outsource</h2>
+  <h2 style="margin-bottom:4px">รายงานตรวจโค้ด outsource${r.projectName ? " — " + esc(r.projectName) : ""}</h2>
   <p style="color:#6b7280;margin-top:0">
     เทียบ <code>${esc(r.baseRef)}</code> → <code>${esc(r.headRef)}</code><br/>
     สร้างเมื่อ ${esc(r.generatedAt)}${r.changeRequestPath ? `<br/>request-change: ${esc(r.changeRequestPath)}` : ""}

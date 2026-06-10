@@ -1,0 +1,8 @@
+{
+  "name": "ShopX Backend (ตัวอย่าง)",
+  "repo": "../shopx-delivery",
+  "requirementDoc": "docs/example/requirement.md",
+  "changeRequests": "docs/example/change-requests.md",
+  "baseBranch": "delivery-prev",
+  "emailTo": ["md@smartalliance.co.th"]
+}
