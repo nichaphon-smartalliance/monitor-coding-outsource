@@ -9,15 +9,17 @@ import type { LoadedDoc, ProjectContext } from "./types.ts";
 const MAX_DOC_CHARS = 60000; // รวมทุก docs ไม่เกินเท่านี้ (กัน token บาน)
 const PER_DOC_CHARS = 12000;
 
-// ไฟล์ที่ถือว่าเป็น "เอกสารอธิบายโปรเจกต์"
+// ไฟล์ที่ถือว่าเป็น "เอกสารอธิบายโปรเจกต์" (ใช้เป็น fallback เมื่อไม่มี requirement doc)
+// หมายเหตุ: ไม่อ่าน CLAUDE.md / package.json / build files เพราะเป็น guidance สำหรับ dev/AI
+//          ไม่ใช่สเปกธุรกิจของโปรเจกต์
 function isDocFile(path: string): boolean {
   const p = path.toLowerCase();
   const base = p.split("/").pop() ?? p;
-  if (base === "readme.md" || base === "readme" || base === "claude.md") return true;
-  if (base === "package.json" || base === "pom.xml" || base === "build.gradle") return true;
+  if (base === "claude.md") return false; // ห้ามใช้ CLAUDE.md เป็นแหล่งความเข้าใจโปรเจกต์
+  if (base === "readme.md" || base === "readme") return true;
   if (p.startsWith("docs/") && (p.endsWith(".md") || p.endsWith(".txt"))) return true;
   if (p.startsWith("doc/") && (p.endsWith(".md") || p.endsWith(".txt"))) return true;
-  // .md ที่ root (ความลึก 0)
+  // .md ที่ root (ความลึก 0) — ยกเว้น CLAUDE.md ที่ตัดไปแล้วข้างบน
   if (p.endsWith(".md") && !p.includes("/")) return true;
   return false;
 }
@@ -43,17 +45,18 @@ export async function buildProjectContext(
   ref: string,
   requirement?: LoadedDoc,
 ): Promise<ProjectContext> {
-  const repoDocs = collectDocs(repo, ref);
-  // requirement doc (สเปกตั้งต้น) สำคัญสุด → วางไว้หน้าสุดให้ AI อ่านก่อน
-  const docs = requirement && requirement.text.trim()
-    ? [{ path: `[PROJECT REQUIREMENT] ${requirement.path}`, text: requirement.text.slice(0, 30000) }, ...repoDocs]
-    : repoDocs;
+  const hasRequirement = !!(requirement && requirement.text.trim());
+  // ถ้ามี requirement doc → ใช้เป็น "แหล่งความเข้าใจหลัก" อย่างเดียว (ไม่ปนเอกสาร dev ใน repo)
+  // ถ้าไม่มี → fallback ไปอ่าน README/docs ใน repo (แต่ไม่แตะ CLAUDE.md)
+  const docs = hasRequirement
+    ? [{ path: `[PROJECT REQUIREMENT] ${requirement!.path}`, text: requirement!.text.slice(0, 30000) }]
+    : collectDocs(repo, ref);
 
   if (docs.length === 0) {
     return {
       overview: config.language === "th"
-        ? "ไม่พบเอกสารอธิบายโปรเจกต์ (README/docs) ใน ref นี้ — วิเคราะห์จากโค้ดที่เปลี่ยนล้วน ๆ"
-        : "No project docs (README/docs) found at this ref — analysing from code changes only.",
+        ? "ไม่มี project requirement และไม่พบ README/docs — วิเคราะห์จากโค้ดที่เปลี่ยนล้วน ๆ (แนะนำให้เพิ่ม requirement doc เพื่อความแม่นยำ)"
+        : "No project requirement and no README/docs found — analysing from code changes only.",
       glossary: "",
       sourceDocs: [],
     };
@@ -67,12 +70,12 @@ export async function buildProjectContext(
     ? "ตอบเป็นภาษาไทย"
     : "Answer in English";
 
-  const system = `คุณเป็น senior software architect ที่กำลังศึกษาโปรเจกต์เพื่อเตรียมรีวิวโค้ดที่ vendor ส่งมอบ
-หน้าที่: อ่านเอกสารโปรเจกต์ที่ให้มา แล้วสรุปความเข้าใจ ${langInstruction}
+  const system = `คุณกำลังศึกษาโปรเจกต์จาก "project requirement" เพื่อเตรียมรีวิวงานที่ vendor ส่งมอบ
+หน้าที่: อ่าน requirement แล้วสรุปความเข้าใจ "เชิงธุรกิจ/ฟีเจอร์" (มองจากมุมผู้ใช้/PM ไม่ใช่มุมโค้ด) ${langInstruction}
 ตอบเป็น JSON เท่านั้น รูปแบบ:
 {
-  "overview": "สรุปว่าโปรเจกต์นี้คืออะไร ทำงานอะไร มีโมดูล/ฟีเจอร์หลักอะไร สถาปัตยกรรม/เทคโนโลยีที่ใช้ (ย่อ 1-2 ย่อหน้า)",
-  "glossary": "คำศัพท์/ชื่อเฉพาะ/โดเมนของโปรเจกต์ที่ควรใช้ให้ถูกเวลาอธิบายการเปลี่ยนแปลง (bullet สั้น ๆ)"
+  "overview": "สรุปว่าโปรเจกต์นี้คืออะไร มีไว้ทำอะไร ผู้ใช้ทำอะไรได้บ้าง ฟีเจอร์/ความสามารถหลักมีอะไร (ย่อ 1-2 ย่อหน้า ภาษาคนทั่วไป)",
+  "glossary": "คำศัพท์/ชื่อเฉพาะเชิงโดเมนของโปรเจกต์ (เช่น ชื่อฟีเจอร์ ชื่อโมดูลเชิงธุรกิจ) ที่ควรใช้ให้ถูกเวลาอธิบาย — bullet สั้น ๆ ไม่ต้องลงรายละเอียดเทคนิค"
 }`;
 
   const user = `เอกสารของโปรเจกต์:\n\n${docBlob}`;
@@ -83,7 +86,7 @@ export async function buildProjectContext(
         { role: "system", content: system },
         { role: "user", content: user },
       ],
-      { maxTokens: 2048, spec: config.ai.contextModel },
+      { maxTokens: 4000, spec: config.ai.contextModel },
     );
     const { extractJSON } = await import("./ai.ts");
     const parsed = extractJSON<{ overview: string; glossary: string }>(raw);
