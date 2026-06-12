@@ -78,66 +78,75 @@ function escapeCell(s: string): string {
   return (s ?? "").replace(/\|/g, "\\|").replace(/\n/g, " ").trim();
 }
 
-// HTML แบบเรียบ ๆ สำหรับเนื้ออีเมล
+// เนื้ออีเมลสำหรับ "PM" — สรุปภาษาธุรกิจล้วน ไม่มี path/ตารางไฟล์/ศัพท์เทคนิค
+// (รายละเอียดเชิงเทคนิครายไฟล์อยู่ในไฟล์ .md ที่แนบไปด้วย)
 export function reportToHtml(r: AnalysisReport): string {
-  const rows = r.files
-    .map(
-      (f) => `<tr>
-<td style="font-family:monospace">${esc(f.path)}</td>
-<td>${esc(f.status)}</td>
-<td>${esc(CLASS_LABEL[f.classification])}</td>
-<td>${esc(RISK_LABEL[f.risk] ?? f.risk)}</td>
-<td>${esc(f.summary)}</td>
-</tr>`,
-    )
-    .join("\n");
-
-  return `<div style="font-family:Segoe UI,Arial,sans-serif;color:#1f2937;max-width:900px">
-  <h2 style="margin-bottom:4px">รายงานตรวจโค้ด outsource${r.projectName ? " — " + esc(r.projectName) : ""}</h2>
-  <p style="color:#6b7280;margin-top:0">
-    เทียบ <code>${esc(r.baseRef)}</code> → <code>${esc(r.headRef)}</code><br/>
-    สร้างเมื่อ ${esc(r.generatedAt)}${r.changeRequestPath ? `<br/>request-change: ${esc(r.changeRequestPath)}` : ""}
+  return `<div style="font-family:Segoe UI,Arial,sans-serif;color:#1f2937;max-width:760px;line-height:1.6">
+  <h2 style="margin-bottom:2px">รายงานการส่งมอบงาน${r.projectName ? " — " + esc(r.projectName) : ""}</h2>
+  <p style="color:#6b7280;margin-top:0;font-size:13px">
+    รอบส่งมอบ: ${esc(r.baseRef)} → ${esc(r.headRef)} · วันที่ ${esc(r.generatedAt.slice(0, 10))}
   </p>
 
-  <table style="border-collapse:collapse;margin:12px 0">
-    <tr style="background:#f3f4f6">
-      <th style="padding:6px 12px;border:1px solid #e5e7eb">ไฟล์ทั้งหมด</th>
-      <th style="padding:6px 12px;border:1px solid #e5e7eb">ตามที่ขอ</th>
-      <th style="padding:6px 12px;border:1px solid #e5e7eb">งานหลัก</th>
-      <th style="padding:6px 12px;border:1px solid #e5e7eb">นอกเหนือที่ขอ</th>
-      <th style="padding:6px 12px;border:1px solid #e5e7eb">เสี่ยงสูง</th>
-    </tr>
-    <tr style="text-align:center">
-      <td style="padding:6px 12px;border:1px solid #e5e7eb">${r.stats.totalFiles}</td>
-      <td style="padding:6px 12px;border:1px solid #e5e7eb">${r.stats.requested}</td>
-      <td style="padding:6px 12px;border:1px solid #e5e7eb">${r.stats.mainRequirement}</td>
-      <td style="padding:6px 12px;border:1px solid #e5e7eb">${r.stats.unexpected}</td>
-      <td style="padding:6px 12px;border:1px solid #e5e7eb">${r.stats.highRisk}</td>
-    </tr>
-  </table>
-
-  <h3>สรุปภาพรวม</h3>
-  <div style="white-space:pre-wrap;background:#f9fafb;padding:12px;border-radius:8px;border:1px solid #e5e7eb">${esc(r.executiveSummary.trim())}</div>
-
-  <h3>รายละเอียดรายไฟล์</h3>
-  <table style="border-collapse:collapse;width:100%;font-size:14px">
-    <tr style="background:#f3f4f6;text-align:left">
-      <th style="padding:6px 8px;border:1px solid #e5e7eb">ไฟล์</th>
-      <th style="padding:6px 8px;border:1px solid #e5e7eb">สถานะ</th>
-      <th style="padding:6px 8px;border:1px solid #e5e7eb">ประเภท</th>
-      <th style="padding:6px 8px;border:1px solid #e5e7eb">ความเสี่ยง</th>
-      <th style="padding:6px 8px;border:1px solid #e5e7eb">สรุป</th>
-    </tr>
-    ${rows}
-  </table>
+  <div style="background:#f9fafb;padding:16px 20px;border-radius:10px;border:1px solid #e5e7eb;margin-top:12px">
+    ${mdToHtml(r.executiveSummary.trim())}
+  </div>
 
   <p style="color:#9ca3af;font-size:12px;margin-top:16px">
-    Pipeline: อ่าน docs ด้วย <code>${esc(r.pipeline.contextModel)}</code> ·
-    วิเคราะห์โค้ด (refine chain) <code>${esc(r.pipeline.analyzeChain.join(" → "))}</code> ·
-    เรียบเรียงด้วย <code>${esc(r.pipeline.writerModel)}</code><br/>
-    สร้างโดย outsource-monitor — วิเคราะห์ด้วย AI ผ่าน develyst-ai gateway
+    รายละเอียดเชิงเทคนิครายไฟล์ ดูได้ในไฟล์แนบ (.md)<br/>
+    รายงานนี้สร้างและสรุปโดยระบบอัตโนมัติ
   </p>
 </div>`;
+}
+
+// แปลง markdown ของสรุป → HTML แบบเรียบ ๆ (หัวข้อ/ตัวหนา/bullet/ย่อหน้า)
+function mdToHtml(md: string): string {
+  const lines = md.split("\n");
+  const out: string[] = [];
+  let inList = false;
+  const closeList = () => { if (inList) { out.push("</ul>"); inList = false; } };
+  const inline = (s: string) =>
+    esc(s)
+      .replace(/`([^`]+)`/g, "$1")                    // ตัด code backtick
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/\*([^*]+)\*/g, "$1");
+
+  for (const raw of lines) {
+    const line = raw.trimEnd();
+    const t = line.trim();
+    if (!t) { closeList(); continue; }
+
+    // ข้ามเส้นคั่น / แถวคั่นตาราง
+    if (/^([-=*_]\s*){3,}$/.test(t) || /^\|?\s*:?-{2,}/.test(t)) { closeList(); continue; }
+
+    // หัวข้อ
+    const h = t.match(/^(#{1,6})\s+(.*)$/);
+    if (h) {
+      closeList();
+      out.push(`<div style="font-weight:700;margin:12px 0 4px">${inline(h[2])}</div>`);
+      continue;
+    }
+
+    // bullet (- , * , 1. )
+    const b = t.match(/^(?:[-*]|\d+\.)\s+(.*)$/);
+    if (b) {
+      if (!inList) { out.push(`<ul style="margin:4px 0;padding-left:20px">`); inList = true; }
+      out.push(`<li>${inline(b[1])}</li>`);
+      continue;
+    }
+
+    // แถวตาราง markdown → รวมเซลล์เป็นบรรทัดเดียว
+    if (t.startsWith("|")) {
+      closeList();
+      const cells = t.split("|").map((c) => c.trim()).filter(Boolean);
+      out.push(`<p style="margin:4px 0">${inline(cells.join(" — "))}</p>`);
+      continue;
+    }
+
+    closeList();
+    out.push(`<p style="margin:8px 0">${inline(t)}</p>`);
+  }
+  closeList();
+  return out.join("\n");
 }
 
 function esc(s: string): string {
